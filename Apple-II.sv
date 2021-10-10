@@ -55,8 +55,9 @@ module emu
 
 	input  [11:0] HDMI_WIDTH,
 	input  [11:0] HDMI_HEIGHT,
+	output        HDMI_FREEZE,
 
-`ifdef USE_FB
+`ifdef MISTER_FB
 	// Use framebuffer in DDRAM (USE_FB=1 in qsf)
 	// FB_FORMAT:
 	//    [2:0] : 011=8bpp(palette) 100=16bpp 101=24bpp 110=32bpp
@@ -74,6 +75,7 @@ module emu
 	input         FB_LL,
 	output        FB_FORCE_BLANK,
 
+`ifdef MISTER_FB_PALETTE
 	// Palette control for 8bit modes.
 	// Ignored for other video modes.
 	output        FB_PAL_CLK,
@@ -81,6 +83,7 @@ module emu
 	output [23:0] FB_PAL_DOUT,
 	input  [23:0] FB_PAL_DIN,
 	output        FB_PAL_WR,
+`endif
 `endif
 
 	output        LED_USER,  // 1 - ON, 0 - OFF.
@@ -112,7 +115,6 @@ module emu
 	output        SD_CS,
 	input         SD_CD,
 
-`ifdef USE_DDRAM
 	//High latency DDR3 RAM interface
 	//Use for non-critical time purposes
 	output        DDRAM_CLK,
@@ -125,9 +127,7 @@ module emu
 	output [63:0] DDRAM_DIN,
 	output  [7:0] DDRAM_BE,
 	output        DDRAM_WE,
-`endif
 
-`ifdef USE_SDRAM
 	//SDRAM interface with lower latency
 	output        SDRAM_CLK,
 	output        SDRAM_CKE,
@@ -140,10 +140,10 @@ module emu
 	output        SDRAM_nCAS,
 	output        SDRAM_nRAS,
 	output        SDRAM_nWE,
-`endif
 
-`ifdef DUAL_SDRAM
+`ifdef MISTER_DUAL_SDRAM
 	//Secondary SDRAM
+	//Set all output SDRAM_* signals to Z ASAP if SDRAM2_EN is 0
 	input         SDRAM2_EN,
 	output        SDRAM2_CLK,
 	output [12:0] SDRAM2_A,
@@ -195,6 +195,7 @@ assign LED_POWER = 0;
 assign BUTTONS   = 0;
 assign VGA_SCALER= 0;
 assign VGA_F1 = 0;
+assign HDMI_FREEZE = 0;
 
 wire [1:0] ar = status[13:12];
 video_freak video_freak
@@ -213,7 +214,8 @@ video_freak video_freak
 parameter CONF_STR = {
 	"Apple-II;;",
 	"-;",
-	"S,NIBDSKDO PO ;",
+	"S0,NIBDSKDO PO ;",
+	"S1,HDV;",
 	"-;",
 	"OCD,Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
 	"O23,Display,Color,B&W,Green,Amber;",
@@ -229,6 +231,7 @@ parameter CONF_STR = {
 	"O78,Stereo mix,none,25%,50%,100%;",
 	"-;",
 	"O6,Analog X/Y,Normal,Swapped;",
+	"OHI,Paddle as analog,No,X,Y;",
 	"-;",
 	"R0,Cold Reset;",
 	"JA,Fire 1,Fire 2;",
@@ -254,32 +257,33 @@ wire  [1:0] buttons;
 wire        forced_scandoubler;
 wire [21:0] gamma_bus;
 
-wire [15:0] joystick_0_USB, joystick_1_USB;
-wire [15:0] joystick_a0, joystick_a1;
-
-wire  [5:0] joy = (joystick_0[5:0] | joystick_1[5:0]) & {2'b11, {4{~joya_en}}};
-wire [15:0] joya = joystick_a0 ? joystick_a0 : joystick_a1;
-wire        joya_en = |joya;
+wire [15:0] joystick_0_USB;
+wire [15:0] joystick_a0;
+wire  [7:0] paddle_0;
 
 wire [10:0] ps2_key;
 
-reg  [31:0] sd_lba;
-reg         sd_rd;
-wire        sd_ack;
+wire [31:0] sd_lba[2];
+reg   [1:0] sd_rd;
+reg   [1:0] sd_wr;
+wire  [1:0] sd_ack;
 wire  [8:0] sd_buff_addr;
 wire  [7:0] sd_buff_dout;
+wire  [7:0] sd_buff_din[2];
 wire        sd_buff_wr;
-wire        img_mounted;
+wire  [1:0] img_mounted;
+wire        img_readonly;
+
 wire [63:0] img_size;
 
 // F2 F1 U D L R 
 wire [31:0] joystick_0 = joydb_1ena ? (OSD_STATUS? 32'b000000 : {joydb_1[6],joydb_1[5]|joydb_1[4],joydb_1[3:0]}) : joystick_0_USB;
-wire [31:0] joystick_1 = joydb_2ena ? (OSD_STATUS? 32'b000000 : {joydb_2[6],joydb_2[5]|joydb_2[4],joydb_2[3:0]}) : joydb_1ena ? joystick_0_USB : joystick_1_USB;
+//wire [31:0] joystick_1 = joydb_2ena ? (OSD_STATUS? 32'b000000 : {joydb_2[6],joydb_2[5]|joydb_2[4],joydb_2[3:0]}) : joydb_1ena ? joystick_0_USB : joystick_1_USB;
 
 wire [15:0] joydb_1 = JOY_FLAG[2] ? JOYDB9MD_1 : JOY_FLAG[1] ? JOYDB15_1 : '0;
-wire [15:0] joydb_2 = JOY_FLAG[2] ? JOYDB9MD_2 : JOY_FLAG[1] ? JOYDB15_2 : '0;
+//wire [15:0] joydb_2 = JOY_FLAG[2] ? JOYDB9MD_2 : JOY_FLAG[1] ? JOYDB15_2 : '0;
 wire        joydb_1ena = |JOY_FLAG[2:1]              ;
-wire        joydb_2ena = |JOY_FLAG[2:1] & JOY_FLAG[0];
+//wire        joydb_2ena = |JOY_FLAG[2:1] & JOY_FLAG[0];
 
 //----BA 9876543210
 //----MS ZYXCBAUDLR
@@ -307,12 +311,10 @@ joy_db15 joy_db15
   .joystick2 ( JOYDB15_2 )	  
 );
 
-hps_io #(.STRLEN($size(CONF_STR)>>3)) hps_io
+hps_io #(.CONF_STR(CONF_STR), .VDNUM(2)) hps_io
 (
 	.clk_sys(clk_sys),
 	.HPS_BUS(HPS_BUS),
-
-	.conf_str(CONF_STR),
 
 	.buttons(buttons),
 	.status(status),
@@ -321,27 +323,32 @@ hps_io #(.STRLEN($size(CONF_STR)>>3)) hps_io
 
 	.sd_lba(sd_lba),
 	.sd_rd(sd_rd),
-	.sd_wr(0),
+	.sd_wr(sd_wr),
 	.sd_ack(sd_ack),
 	.sd_buff_addr(sd_buff_addr),
 	.sd_buff_dout(sd_buff_dout),
-	.sd_buff_din(0),
+	.sd_buff_din(sd_buff_din),
 	.sd_buff_wr(sd_buff_wr),
 	.img_mounted(img_mounted),
+	.img_readonly(img_readonly),
 	.img_size(img_size),
 
 	.ioctl_wait(0),
 
-	.joy_raw(OSD_STATUS? (joydb_1[5:0]|joydb_2[5:0]) : 6'b000000 ),
+	.joy_raw(OSD_STATUS? (joydb_1[5:0]) : 6'b000000 ),
 	.ps2_key(ps2_key),
 
 	.joystick_0(joystick_0_USB),
-	.joystick_1(joystick_1_USB),
 	.joystick_analog_0(joystick_a0),
-	.joystick_analog_1(joystick_a1)
+	.paddle_0(paddle_0)
 );
 
 ///////////////////////////////////////////////////
+
+wire  [7:0] pdl  = {~paddle_0[7], paddle_0[6:0]};
+wire [15:0] joys = status[6] ? joystick_a0 : {joystick_a0[7:0],joystick_a0[15:8]};
+wire [15:0] joya = {status[17] ? pdl : joys[15:8], status[18] ? pdl : joys[7:0]};
+wire  [5:0] joyd = joystick_0[5:0] & {2'b11, {2{~|joys[7:0]}}, {2{~|joys[15:8]}}};
 
 wire [9:0] audio_l, audio_r;
 
@@ -363,7 +370,7 @@ wire hbl,vbl;
 apple2_top apple2_top
 (
 	.CLK_14M(clk_sys),
-	.CPU_WAIT(cpu_wait),
+	.CPU_WAIT(cpu_wait_hdd | cpu_wait_fdd),
 	.cpu_type(status[5]),
 
 	.reset_cold(RESET | status[0]),
@@ -384,15 +391,26 @@ apple2_top apple2_top
 
 	.ps2_key(ps2_key),
 
-	.joy(joy),
-	.joy_an(status[6] ? joya : {joya[7:0],joya[15:8]}),
+	.joy(joyd),
+	.joy_an(joya),
 
 	.mb_enabled(~status[4]),
 
 	.TRACK(track),
-	.TRACK_RAM_ADDR({track_sec, sd_buff_addr}),
-	.TRACK_RAM_DI(sd_buff_dout),
-	.TRACK_RAM_WE(sd_buff_wr),
+	.DISK_RAM_ADDR({track_sec, sd_buff_addr}),
+	.DISK_RAM_DI(sd_buff_dout),
+	.DISK_RAM_DO(sd_buff_din[0]),
+	.DISK_RAM_WE(sd_buff_wr & sd_ack[0]),
+
+	.HDD_SECTOR(sd_lba[1]),
+	.HDD_READ(hdd_read),
+	.HDD_WRITE(hdd_write),
+	.HDD_MOUNTED(hdd_mounted),
+	.HDD_PROTECT(hdd_protect),
+	.HDD_RAM_ADDR(sd_buff_addr),
+	.HDD_RAM_DI(sd_buff_dout),
+	.HDD_RAM_DO(sd_buff_din[1]),
+	.HDD_RAM_WE(sd_buff_wr & sd_ack[1]),
 
 	.ram_addr(ram_addr),
 	.ram_do(ram_dout),
@@ -415,7 +433,8 @@ wire HSync, VSync, HBlank, VBlank;
 video_mixer #(.LINE_LENGTH(580), .GAMMA(1)) video_mixer
 (
 	.*,
-	.hq2x(scale==1)
+	.hq2x(scale==1),
+	.freeze_sync()
 );
 
 wire [17:0] ram_addr;
@@ -444,41 +463,103 @@ always @(posedge clk_sys) begin
 	end
 end
 
-wire [5:0] track;
-reg  [3:0] track_sec;
-reg        cpu_wait = 0;
+wire dd_reset = RESET | status[0] | buttons[1];
+
+reg  hdd_mounted = 0;
+wire hdd_read;
+wire hdd_write;
+reg  hdd_protect;
+reg  cpu_wait_hdd = 0;
 
 always @(posedge clk_sys) begin
-	reg [2:0] state = 0;
+	reg state = 0;
+	reg old_ack = 0;
+	reg hdd_read_pending = 0;
+	reg hdd_write_pending = 0;
+
+	old_ack <= sd_ack[1];
+	hdd_read_pending <= hdd_read_pending | hdd_read;
+	hdd_write_pending <= hdd_write_pending | hdd_write;
+
+	if (img_mounted[1]) begin
+		hdd_mounted <= img_size != 0;
+		hdd_protect <= img_readonly;
+	end
+
+	if(dd_reset) begin
+		state <= 0;
+		cpu_wait_hdd <= 0;
+		hdd_read_pending <= 0;
+		hdd_write_pending <= 0;
+		sd_rd[1] <= 0;
+		sd_wr[1] <= 0;
+	end
+	else if(!state) begin
+		if (hdd_read_pending | hdd_write_pending) begin
+			state <= 1;
+			sd_rd[1] <= hdd_read_pending;
+			sd_wr[1] <= hdd_write_pending;
+			cpu_wait_hdd <= 1;
+		end
+	end
+	else begin
+		if (~old_ack & sd_ack[1]) begin
+			hdd_read_pending <= 0;
+			hdd_write_pending <= 0;
+			sd_rd[1] <= 0;
+			sd_wr[1] <= 0;
+		end
+		else if(old_ack & ~sd_ack[1]) begin
+			state <= 0;
+			cpu_wait_hdd <= 0;
+		end
+	end
+end
+
+assign      sd_lba[0] = lba_fdd;
+wire  [5:0] track;
+reg   [3:0] track_sec;
+reg         cpu_wait_fdd = 0;
+reg  [31:0] lba_fdd;
+
+always @(posedge clk_sys) begin
+	reg       state = 0;
 	reg [5:0] cur_track;
-	reg       mounted = 0;
+	reg       fdd_mounted = 0;
 	reg       old_ack = 0;
 	
-	old_ack <= sd_ack;
-	mounted <= mounted | img_mounted;
-	
-	case(state)
-		0: if((cur_track != track) || (mounted && ~img_mounted)) begin
-				cur_track <= track;
-				mounted <= 0;
-				if(img_size) begin
-					track_sec <= 0;
-					sd_lba <= 13 * track;
-					state <= 1;
-					sd_rd <= 1;
-					cpu_wait <= 1;
-				end
+	old_ack <= sd_ack[0];
+	fdd_mounted <= fdd_mounted | img_mounted[0];
+	sd_wr[0] <= 0;
+
+	if(dd_reset) begin
+		state <= 0;
+		cpu_wait_fdd <= 0;
+		sd_rd[0] <= 0;
+	end
+	else if(!state) begin
+		if((cur_track != track) || (fdd_mounted && ~img_mounted[0])) begin
+			cur_track <= track;
+			fdd_mounted <= 0;
+			if(img_size) begin
+				track_sec <= 0;
+				lba_fdd <= 13 * track;
+				state <= 1;
+				sd_rd[0] <= 1;
+				cpu_wait_fdd <= 1;
 			end
-			
-		1: if(~old_ack & sd_ack) begin
-				if(track_sec >= 12) sd_rd <= 0;
-				sd_lba <= sd_lba + 1'd1;
-			end else if(old_ack & ~sd_ack) begin
-				track_sec <= track_sec + 1'd1;
-				if(~sd_rd) state <= 0;
-				cpu_wait <= 0;
-			end
-	endcase
+		end
+	end
+	else begin
+		if(~old_ack & sd_ack[0]) begin
+			if(track_sec >= 12) sd_rd[0] <= 0;
+			lba_fdd <= lba_fdd + 1'd1;
+		end else if(old_ack & ~sd_ack[0]) begin
+			track_sec <= track_sec + 1'd1;
+			if(~sd_rd[0]) state <= 0;
+			cpu_wait_fdd <= 0;
+		end
+	end
 end
 
 wire tape_adc, tape_adc_act;
