@@ -4,7 +4,7 @@ This is a MiSTer port of the Apple IIe core from MiST.
 
 ## Description
 
-This the MiST port of a reconstruction of an 1980s-era Apple ][+ implemented in VHDL for FPGAs.  
+This the MiST port of a reconstruction of an 1980s-era Apple ]\[+ implemented in VHDL for FPGAs.  
 Original for the DE2: http://www1.cs.columbia.edu/~sedwards/apple2fpga/  
 Port for the MiST: http://ws0.org/tag/apple2/
 
@@ -19,7 +19,7 @@ Port for the MiST: http://ws0.org/tag/apple2/
 * color, amber, green and black&white monitor
 * language card in slot 0
 * 64K base + 64K auxilary RAM with 80 column and double hi-res support (256KB total with Saturn 128K)
-* Saturn 128k RAM expansion in slot 5 (get the utility disks from here: http://apple2online.com/index.php?p=1_28)
+* Saturn 128k RAM expansion in slot 5 (get the utility disks from here: http://apple2online.com/?page_id=3447 , under "Saturn RAMSoft")
 * Mockingboard model A (two AY-3-8913 chips for six audio channels) in slot 4
 
 ## Disk format notes
@@ -27,6 +27,10 @@ Port for the MiST: http://ws0.org/tag/apple2/
 Apple-II has a big mess in disk formats. DSK image may contain either DO or PO format. Even PO and DO may contain opposite format. So if PO disk doesn't work, then try to rename it to DO. If DO or DSK doesn't work then try to rename it to PO.
 
 For HDD, only HDV images (raw ProDOS partition images) 32MB in size are supported. 2MG images may work if the 64-byte header is removed.
+```bash
+dd if=diskimage.2mg of=diskimage.hdv bs=64 skip=1
+```
+
 
 ## Instructions
 
@@ -53,7 +57,7 @@ or
 The call command will enter the Monitor. Type the call a second time if the * prompt won't
 show the first time. 
 At the Monitor you can also type 6 and then Ctrl-P followed by return.
-See http://vectronicsappleworld.com/appleii/dos.html#bootdos
+See https://web.archive.org/web/20140827184511/http://vectronicsappleworld.com:80/appleii/dos.html#bootdos
 
 The HDD interface is in slot 7. Unlike the floppy interface, it does not stall until an image is mounted, so either reset the machine or use one of the following after mounting an image:
 
