@@ -52,13 +52,14 @@ module emu
 	output        VGA_F1,
 	output  [1:0] VGA_SL,
 	output        VGA_SCALER, // Force VGA scaler
+	output        VGA_DISABLE, // analog out is off
 
 	input  [11:0] HDMI_WIDTH,
 	input  [11:0] HDMI_HEIGHT,
 	output        HDMI_FREEZE,
 
 `ifdef MISTER_FB
-	// Use framebuffer in DDRAM (USE_FB=1 in qsf)
+	// Use framebuffer in DDRAM
 	// FB_FORMAT:
 	//    [2:0] : 011=8bpp(palette) 100=16bpp 101=24bpp 110=32bpp
 	//    [3]   : 0=16bits 565 1=16bits 1555
@@ -184,7 +185,6 @@ assign       USER_OUT  = JOY_FLAG[2] ? {3'b111,JOY_SPLIT,3'b111,JOY_MDSEL} : JOY
 assign       USER_MODE = JOY_FLAG[2:1] ;
 assign       USER_OSD  = joydb_1[10] & joydb_1[6];
 
-assign {UART_RTS, UART_TXD, UART_DTR} = 0;
 assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
 assign {SDRAM_DQ, SDRAM_A, SDRAM_BA, SDRAM_CLK, SDRAM_CKE, SDRAM_DQML, SDRAM_DQMH, SDRAM_nWE, SDRAM_nCAS, SDRAM_nRAS, SDRAM_nCS} = 'Z;
 assign {DDRAM_CLK, DDRAM_BURSTCNT, DDRAM_ADDR, DDRAM_DIN, DDRAM_BE, DDRAM_RD, DDRAM_WE} = 0;
@@ -194,6 +194,7 @@ assign LED_DISK  = 0;
 assign LED_POWER = 0;
 assign BUTTONS   = 0;
 assign VGA_SCALER= 0;
+assign VGA_DISABLE = 0;
 assign VGA_F1 = 0;
 assign HDMI_FREEZE = 0;
 
@@ -212,7 +213,7 @@ video_freak video_freak
 
 `include "build_id.v" 
 parameter CONF_STR = {
-	"Apple-II;;",
+	"Apple-II;UART19200:9600:4800:2400:1200:300;",
 	"-;",
 	"S0,NIBDSKDO PO ;",
 	"S1,HDV;",
@@ -397,6 +398,8 @@ endcase // always @ (status[21:19])
 apple2_top apple2_top
 (
 	.CLK_14M(clk_sys),
+	.CLK_50M(CLK_50M),
+
 	.CPU_WAIT(cpu_wait_hdd | cpu_wait_fdd),
 	.cpu_type(status[5]),
 
@@ -446,7 +449,15 @@ apple2_top apple2_top
 	.ram_we(ram_we),
 	.ram_aux(ram_aux),
 
-	.DISK_ACT(led)
+	.DISK_ACT(led),
+
+	.UART_TXD(UART_TXD),
+	.UART_RXD(UART_RXD),
+	.UART_RTS(UART_RTS),
+	.UART_CTS(UART_CTS),
+	.UART_DTR(UART_DTR),
+	.UART_DSR(UART_DSR)
+
 );
 
 wire [2:0] scale = status[11:9];
