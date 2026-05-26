@@ -350,7 +350,9 @@ hps_io #(.CONF_STR(CONF_STR), .VDNUM(3)) hps_io
 
 	.buttons(buttons),
 	.status(status),
-	.status_in({status[31:26],palette_toggle?palette_req:status[25:24],status[23:21],video_toggle?screen_mode_req:status[20:19],status[18:0]}),
+	// [MiSTer-DB9 BEGIN] - widened to 128 bits, preserve [127:32] (joy_type at [127:125], joy_2p at [124])
+	.status_in({status[127:26],palette_toggle?palette_req:status[25:24],status[23:21],video_toggle?screen_mode_req:status[20:19],status[18:0]}),
+	// [MiSTer-DB9 END]
 	.status_set(video_toggle || palette_toggle),
 	.forced_scandoubler(forced_scandoubler),
 	.gamma_bus(gamma_bus),
