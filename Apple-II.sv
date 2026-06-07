@@ -29,7 +29,7 @@ module emu
 	input         RESET,
 
 	//Must be passed to hps_io module
-	inout  [48:0] HPS_BUS,
+	inout  [45:0] HPS_BUS,
 
 	//Base video clock. Usually equals to CLK_SYS.
 	output        CLK_VIDEO,
@@ -58,6 +58,7 @@ module emu
 	input  [11:0] HDMI_HEIGHT,
 	output        HDMI_FREEZE,
 	output        HDMI_BLACKOUT,
+	output        HDMI_BOB_DEINT,
 
 `ifdef MISTER_FB
 	// Use framebuffer in DDRAM
@@ -252,6 +253,7 @@ assign VGA_DISABLE = 0;
 assign VGA_F1 = 0;
 assign HDMI_FREEZE = 0;
 assign HDMI_BLACKOUT = 0;
+assign HDMI_BOB_DEINT = 0;
 
 wire [1:0] ar = status[13:12];
 video_freak video_freak
@@ -286,8 +288,32 @@ parameter CONF_STR = {
 	"OOP,Color palette,NTSC //e,IIgs,AppleWin,Custom;",
 	"FC2,A2P,Custom Palette;",	
 	"-;",
-	"O6,Analog X/Y,Normal,Swapped;",
-	"OHI,Paddle as analog,No,X,Y;",
+	"P1,System & BIOS;",
+	"P1-;",
+	"P1O5,CPU,65C02,6502;",
+	"P1OM,PAL Mode,NTSC,PAL;",
+	"P1-;",
+	"P1ON,Video Rom,US,LOCAL;",
+	"P1F1,BIN,Load 8k Video ROM;", 
+	"P1-;",	
+	"P2,Audio & Video;",
+	"P2-;",	
+	"P2O78,Stereo mix,none,25%,50%,100%;",
+	"P2-;",	
+	"P2OG,Pixel Clock,Double,Normal;",
+	"P2OL,Lo-Res Text,Clean,Composite;",
+	"P2-;",	
+	"P2O9B,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;", 
+	"P2OCD,Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
+	"P2OEF,Scale,Normal,V-Integer,Narrower HV-Integer,Wider HV-Integer;",
+	"P2-;",	
+	"P3,Hardware;",
+	"P3-;",	
+	"P3OST,Slot 4,Mocking board,Mouse,Empty;",
+	"P3OUV,Slot 5,Mouse,Mocking board,256K Saturn,Empty;",
+	"P3O6,Analog X/Y,Normal,Swapped;",
+	"P3OHI,Paddle as analog,No,X,Y;",
+	"P3-;",	
 	"-;",
 	// [MiSTer-DB9-Pro BEGIN] - Saturn-aware UserIO selector
 	"O[127:126],UserIO Joystick,Off,Saturn,DB9MD,DB15;",
@@ -326,6 +352,21 @@ wire [15:0] joystick_a0;
 wire  [7:0] paddle_0;
 
 wire [10:0] ps2_key;
+wire [24:0] ps2_mouse;
+
+
+// The ps2_mouse changes on transition, but gyruco's mouse 
+// implementation is based on the mist mouse_strobe logic
+wire mouse_strobe = (old_stb != ps2_mouse[24]);
+reg  old_stb = 0;
+always @(posedge clk_sys) old_stb <= ps2_mouse[24];
+
+wire mouse_4_inslot = status[29:28] == 2'b01;
+wire mouse_5_inslot = status[31:30] == 2'b00;
+wire mb_4_inslot = status[29:28] == 2'b00;
+wire mb_5_inslot = status[31:30] == 2'b01;
+wire saturn_5_inslot = status[31:30] == 2'b10;	
+
 
 wire [31:0] sd_lba[3];
 reg   [2:0] sd_rd;
@@ -397,10 +438,14 @@ hps_io #(.CONF_STR(CONF_STR), .VDNUM(3)) hps_io
 	.saturn_unlocked(saturn_unlocked),
 	// [MiSTer-DB9-Pro END]
 	.ps2_key(ps2_key),
+	.ps2_mouse(ps2_mouse),
 
 	.joystick_0(joystick_0_USB),
 	.joystick_l_analog_0(joystick_a0),
 	.paddle_0(paddle_0),
+	
+
+
 	
 	.RTC(RTC)
 
@@ -504,8 +549,6 @@ apple2_top apple2_top
 	.joy(joyd),
 	.joy_an(joya),
 
-	.mb_enabled(~status[4]),
-	
 	.TRACK1(TRACK1),
 	.TRACK1_ADDR(TRACK1_RAM_ADDR),
 	.TRACK1_DI(TRACK1_RAM_DI),
@@ -557,8 +600,18 @@ apple2_top apple2_top
 	.UART_CTS(UART_CTS),
 	.UART_DTR(UART_DTR),
 	.UART_DSR(UART_DSR),
-	.RTC(RTC)
+	.RTC(RTC),
 
+	.mouse_x({ps2_mouse[4],ps2_mouse[15:8]}),
+	.mouse_y({ps2_mouse[5],ps2_mouse[23:16]}),
+	.mouse_button(ps2_mouse[0]),
+	.mouse_strobe(mouse_strobe),
+
+	.mouse_4_inslot(mouse_4_inslot),
+	.mouse_5_inslot(mouse_5_inslot),
+	.mb_4_inslot(mb_4_inslot),
+	.mb_5_inslot(mb_5_inslot),
+	.saturn_5_inslot(saturn_5_inslot)
 );
 
 wire [2:0] scale = status[11:9];
