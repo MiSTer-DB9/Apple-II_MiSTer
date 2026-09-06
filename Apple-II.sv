@@ -306,12 +306,10 @@ parameter CONF_STR = {
 	"P1-;",
 	"P1O5,CPU,65C02,6502;",
 	"P1OM,PAL Mode,NTSC,PAL;",
+	"P1oC,Pause when OSD is open,Off,On;",
 	"P1-;",
 	"P1ON,Video Rom,US,LOCAL;",
 	"P1F1,BIN,Load 8k Video ROM;", 
-	"P1-;",
-	"P1oA,Virtual keyboard,Off,On;",
-	"P1o89,Keypad visibility,100%,75%,50%,25%;",
 	"P1-;",
 	"P2,Audio & Video;",
 	"P2-;",	
@@ -338,13 +336,21 @@ parameter CONF_STR = {
 	"P3o3,Disk LED overlay,Yes,No;",
 	"P3o12,Disk drive sound,Off,On (1x),On (2x),On (4x);",
 	"P3-;",
+	"P4,Virtual keyboard;",
+	"P4-;",
+	"P4oA,Virtual keyboard,Off,On;",
+	"P4o89,Keypad visibility,100%,75%,50%,25%;",
+	"P4-;",
+	"P4oB,Joystick to keys,Off,On;",
+	"P4F3,A2K,Load Joy Map;",
+	"P4-;",
 	"-;",
 	// [MiSTer-DB9-Pro BEGIN] - Saturn-aware UserIO selector
 	"O[127:126],UserIO Joystick,Off,Saturn,DB9MD,DB15;",
 	"O[125],UserIO Players, 1 Player,2 Players;",
 	// [MiSTer-DB9-Pro END]
 	"R0,Cold Reset;",
-	"JA,Fire 1,Fire 2,Keyboard On,Keyb. visibility,Keyboard Enter,Keyboard Space;",
+	"JA,Fire 1,Fire 2,Keyboard On,Keyb. visibility,Move keyboard,Keyboard Enter,Keyboard Space;",
 	"jn,A|P,B;",
 	"jp,Y|P,B;",
 	"V,v",`BUILD_DATE
@@ -447,7 +453,7 @@ virtual_keyboard_controller virtual_keyboard_controller
 	.clk(clk_sys),
 	.reset(RESET | status[0]),
 	.ps2_key(ps2_key),
-	.joystick(joystick_0[9:0]),
+	.joystick(joystick_0[10:0]),
 	.enabled(virtual_keyboard_enabled),
 	.filtered_ps2_key(filtered_ps2_key),
 	.active(virtual_keyboard_active),
@@ -530,9 +536,9 @@ hps_io #(.CONF_STR(CONF_STR), .VDNUM(3)) hps_io
 ///////////////////////////////////////////////////
 
 wire [15:0] joya;
-wire  [5:0] joyd;
+wire  [7:0] joyd;
 wire [15:0] core_joya = virtual_keyboard_active ? 16'h0000 : joya;
-wire  [5:0] core_joyd = virtual_keyboard_active ? 6'h00 : joyd;
+wire  [7:0] core_joyd = virtual_keyboard_active ? 8'h00 : joyd;
 
 joystick_input joystick_input
 (
@@ -578,6 +584,7 @@ reg       video_toggle = 0;
 reg       palette_toggle = 0;
 wire [1:0] screen_mode;
 wire [1:0] palette_mode;
+wire osd_pause = status[44] && OSD_STATUS;
 wire virtual_keyboard_enabled = status[42];
 wire [1:0] virtual_keyboard_visibility = status[41:40];
 wire [1:0] virtual_keyboard_transparency_req = virtual_keyboard_visibility + 1'd1;
@@ -620,6 +627,7 @@ apple2_top apple2_top
 
 	.CPU_WAIT(cpu_wait_hdd /*| cpu_wait_fdd*/),
 	.cpu_type(~status[5]),
+	.cpu_stall(osd_pause),
 
 	.reset_cold(RESET | status[0]),
 	.reset_warm(buttons[1] | virtual_keyboard_reset),
@@ -638,6 +646,8 @@ apple2_top apple2_top
 	.TEXT_COLOR( text_color ),
 	.COLOR_PALETTE(status[25:24]),
 	.GRAY_SEAM_FIX(~status[4]),
+	.SEAM_RUN_FILL(1'b1),
+	.SEAM_RUN_WIDE(1'b0),
 	.NTSC_VERTICAL_COMB(~status[32]),
 	.PALMODE(status[22]),
 	.ROMSWITCH(~status[23]),
@@ -657,6 +667,10 @@ apple2_top apple2_top
 
 	.joy(core_joyd),
 	.joy_an(core_joya),
+	// Joy-to-key is disabled while the virtual keyboard is enabled: the user is
+	// expected to type with the keyboard instead, so the joystick must not inject
+	// keystrokes at the same time. The raw joystick (gameport) is unaffected.
+	.JOY_TO_KEY_EN(status[43] && !virtual_keyboard_enabled),
 	
 	.TRACK1(TRACK1),
 	.TRACK1_ADDR(TRACK1_RAM_ADDR),
